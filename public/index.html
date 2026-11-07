@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeetGo - Random Video Chat</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --primary: #FF2E63;
+            --secondary: #08D9D6;
+            --bg: #1A1A2E;
+            --card-bg: #16213E;
+            --text: #EAEAEA;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+        /* Welcome Overlay */
+        #welcome-modal {
+            position: fixed; inset: 0; background: rgba(10, 10, 20, 0.95);
+            display: flex; justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-card {
+            background: var(--card-bg); padding: 2.5rem; border-radius: 24px; text-align: center;
+            box-shadow: 0 10px 30px rgba(0,217,214,0.2); border: 1px solid rgba(255,255,255,0.1); width: 90%; max-width: 400px;
+        }
+        .modal-card h1 { font-size: 2.5rem; color: var(--secondary); margin-bottom: 0.5rem; }
+        .modal-card p { font-size: 0.9rem; color: #888; margin-bottom: 1.5rem; }
+        .input-box {
+            width: 100%; padding: 14px; border-radius: 12px; border: none; background: rgba(255,255,255,0.05);
+            color: #fff; text-align: center; font-size: 1.1rem; margin-bottom: 1rem; outline: none; border: 1px solid var(--secondary);
+        }
+
+        /* App Main Screen */
+        .app-container { display: flex; flex-direction: column; height: 100vh; max-width: 1200px; margin: 0 auto; }
+        
+        /* Video Stream Stage */
+        .video-grid {
+            flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; position: relative;
+        }
+        @media(max-width: 768px) { .video-grid { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+        
+        .video-card {
+            background: #000; border-radius: 20px; position: relative; overflow: hidden; border: 2px solid rgba(255,255,255,0.05);
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .tag { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; backdrop-filter: blur(5px); }
+
+        /* Controls Bar */
+        .controls {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 15px; background: rgba(22, 33, 62, 0.85); padding: 10px 20px; border-radius: 40px; backdrop-filter: blur(10px); z-index: 10;
+        }
+        .btn {
+            width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1);
+            color: #fff; font-size: 1.2rem; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center;
+        }
+        .btn:hover { transform: scale(1.1); }
+        .btn-danger { background: var(--primary); }
+        .btn-success { background: var(--secondary); color: #000; }
+        .btn-off { background: #555; color: #888; }
+
+        /* Chat Section */
+        .chat-container {
+            height: 35vh; background: var(--card-bg); border-top-left-radius: 24px; border-top-right-radius: 24px;
+            display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .msg { max-width: 75%; padding: 10px 14px; border-radius: 16px; font-size: 0.95rem; }
+        .msg-remote { background: rgba(255,255,255,0.1); align-self: flex-start; }
+        .msg-local { background: var(--primary); align-self: flex-end; }
+        .msg-img { max-width: 200px; border-radius: 12px; margin-top: 5px; }
+
+        .chat-controls { display: flex; padding: 10px; gap: 10px; background: rgba(0,0,0,0.2); }
+        .chat-input { flex: 1; background: rgba(255,255,255,0.05); border: none; padding: 12px 18px; border-radius: 25px; color: #fff; outline: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Welcome Modal -->
+    <div id="welcome-modal">
+        <div class="modal-card">
+            <h1>MeetGo</h1>
+            <p>Instant Anonymous Live Video Chat</p>
+            <input type="text" id="username" class="input-box" placeholder="Enter a Nickname..." value="Stranger">
+            <button class="btn btn-success" style="width:100%; border-radius:12px; font-weight:bold;" onclick="startApp()">START CHATTING</button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Video Screen -->
+        <div class="video-grid">
+            <div class="video-card">
+                <video id="remote-video" autoplay playsinline></video>
+                <div class="tag" id="partner-tag">Match: Searching...</div>
+            </div>
+            <div class="video-card">
+                <video id="local-video" autoplay playsinline muted></video>
+                <div class="tag">You</div>
+                
+                <!-- Video Overlay Controls -->
+                <div class="controls">
+                    <button class="btn" id="mic-btn" onclick="toggleMic()"><i class="fa-solid fa-microphone"></i></button>
+                    <button class="btn" id="cam-btn" onclick="toggleCam()"><i class="fa-solid fa-video"></i></button>
+                    <button class="btn btn-danger" onclick="nextMatch()" title="Next Person"><i class="fa-solid fa-forward"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Text & Photo Chat Section -->
+        <div class="chat-container">
+            <div class="messages" id="messages"></div>
+            <div class="chat-controls">
+                <input type="file" id="photo-input" accept="image/*" style="display:none;" onchange="sendPhoto(this)">
+                <button class="btn" onclick="document.getElementById('photo-input').click()"><i class="fa-solid fa-image"></i></button>
+                <input type="text" id="msg-input" class="chat-input" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendMsg()">
+                <button class="btn btn-success" onclick="sendMsg()"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let localStream, peerConnection;
+        let micEnabled = true, camEnabled = true;
+
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        async function startApp() {
+            const name = document.getElementById('username').value || 'Stranger';
+            document.getElementById('welcome-modal').style.display = 'none';
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('local-video').srcObject = localStream;
+                socket.emit('find-match', { name });
+            } catch (err) {
+                alert("Camera and Microphone access are required to run MeetGo.");
+            }
+        }
+
+        socket.on('waiting', () => {
+            document.getElementById('partner-tag').innerText = "Searching for a match...";
+        });
+
+        socket.on('matched', async ({ partner, initiator }) => {
+            document.getElementById('partner-tag').innerText = `Connected to ${partner.name}`;
+            createPeerConnection();
+
+            if (initiator) {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('signal', { offer });
+            }
+        });
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            peerConnection.ontrack = (e) => {
+                document.getElementById('remote-video').srcObject = e.streams[0];
+            };
+
+            peerConnection.onicecandidate = (e) => {
+                if (e.candidate) socket.emit('signal', { candidate: e.candidate });
+            };
+        }
+
+        socket.on('signal', async (data) => {
+            if (data.offer) {
+                await peerConnection.setRemoteDescription(data.offer);
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.emit('signal', { answer });
+            } else if (data.answer) {
+                await peerConnection.setRemoteDescription(data.answer);
+            } else if (data.candidate) {
+                await peerConnection.addIceCandidate(data.candidate);
+            }
+        });
+
+        socket.on('partner-disconnected', () => {
+            document.getElementById('partner-tag').innerText = "Partner disconnected.";
+            if (peerConnection) peerConnection.close();
+            document.getElementById('remote-video').srcObject = null;
+        });
+
+        function nextMatch() {
+            if (peerConnection) peerConnection.close();
+            document.getElementById('remote-video').srcObject = null;
+            document.getElementById('messages').innerHTML = '';
+            socket.emit('skip-match');
+            socket.emit('find-match', { name: document.getElementById('username').value });
+        }
+
+        // Toggles
+        function toggleMic() {
+            micEnabled = !micEnabled;
+            localStream.getAudioTracks()[0].enabled = micEnabled;
+            document.getElementById('mic-btn').classList.toggle('btn-off', !micEnabled);
+        }
+
+        function toggleCam() {
+            camEnabled = !camEnabled;
+            localStream.getVideoTracks()[0].enabled = camEnabled;
+            document.getElementById('cam-btn').classList.toggle('btn-off', !camEnabled);
+        }
+
+        // Messaging Functions
+        function sendMsg() {
+            const input = document.getElementById('msg-input');
+            if (!input.value.trim()) return;
+            appendMsg(input.value, 'local');
+            socket.emit('send-message', { text: input.value });
+            input.value = '';
+        }
+
+        function sendPhoto(input) {
+            const file = input.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    appendMsg(`<img src="${e.target.result}" class="msg-img">`, 'local');
+                    socket.emit('send-message', { image: e.target.result });
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        socket.on('receive-message', (data) => {
+            if (data.text) appendMsg(data.text, 'remote');
+            if (data.image) appendMsg(`<img src="${data.image}" class="msg-img">`, 'remote');
+        });
+
+        function appendMsg(content, type) {
+            const box = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `msg msg-${type}`;
+            div.innerHTML = content;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+    </script>
+</body>
+</html>

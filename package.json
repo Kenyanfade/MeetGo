@@ -1,0 +1,26 @@
+{
+  "name": "meetgo",
+  "version": "1.0.0",
+  "description": "A real-time anonymous video and chat web application built with Node.js, Socket.io, and WebRTC.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kenyanfade/MeetGo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Kenyanfade/MeetGo/issues"
+  },
+  "homepage": "https://github.com/Kenyanfade/MeetGo#readme",
+  "dependencies": {
+    "express": "^5.3.0",
+    "socket.io": "^4.8.4"
+  }
+}
